@@ -1,11 +1,11 @@
 //mqtt服务端
 const aedes = require('aedes')
 
-const net = require('net')
 
 const Koa = require('koa')
-const useRoutes = require('./src/router')
+const useRoutes = require('../router')
 const bodyParser = require('koa-bodyparser')
+const { pubAttrVal, fetchAttrList, getLatestAttrVal } = require('../service/attr.service')
 const kApp = new Koa()
 kApp.useRoutes = useRoutes
 //创建aedes实例
@@ -57,18 +57,67 @@ aedesApp.on('clientDisconnect', async (client) => {
 
 //订阅主题。该函数第一个参数是要订阅的主题； 第二个是用于处理收到的消息的函，它接受两个参数：packet 和 callback。packet 是一个 AedesPublishPacket 对象，表示收到的消息；callback 是一个函数，用于在消息处理完成后通知 aedes 服务器；第三个参数是订阅成功的回调函数
 //创建主题，客户端可通过mqtt连接发布该主题来向mqtt服务器发送信息
-aedesApp.subscribe("myMsg", async function (packet, callback) {
+aedesApp.subscribe("post", async function (packet, callback) {
   callback();
 }, () => {
-  console.log("订阅myMsg成功");
+  console.log("订阅post成功");
+});
+
+//get topic
+aedesApp.subscribe("get", async function (packet, callback) {
+  callback();
+}, () => {
+  console.log("订阅get成功");
 });
 
 //处理收到的消息,我们订阅所有主题收到的消息都可以通过这个事件获取(我们可以把订阅收到消息的处理函数写在上面订阅主题函数的第二个参数里面，或者统一写在下面)
 //监听客户端通过mqtt连接发起的发布事件
 aedesApp.on("publish", async function (packet, client) {
   //packet.topic表示哪个主题，packet.payload是收到的数据，是一串二进制数据，我们需要用.toString()将它转化为字符串
-  if (packet.topic === 'myMsg') {
-    console.log("Received message:", packet.payload.toString());
+  if (packet.topic === 'post') {
+    const recv = JSON.parse(packet.payload.toString());
+    const recvKeys = Object.keys(recv)
+    // console.log("Received message:", recv, recvKeys);
+    recvKeys.forEach(async attr => {
+      const attrVal = recv[attr]
+      await pubAttrVal(attr, attrVal)
+    });
+    aedesApp.publish({
+      topic: "post_reply",  //发布主题
+      payload: '{"status":"success"}',    //消息内容
+      qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
+      retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
+      cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
+      dup: false         //判断消息是否是重复的
+    }, (err) => {          //发布失败的回调
+      if (err) {
+        console.log('发布失败')
+      }
+    });
+  }
+  //todo:获取属性状态
+  else if (packet.topic === 'get') {
+    const latestAttrList = {}
+    const attrList = await fetchAttrList()
+    for (let i = 0; i < attrList.length; i++) {
+      const [latestAttrVal] = await getLatestAttrVal(attrList[i].attr)
+      latestAttrList[attrList[i].attr] = latestAttrVal.attrVal
+    }
+    const attrKeys = Object.keys(latestAttrList)
+    if (attrKeys.length) {
+      aedesApp.publish({
+        topic: "get_reply",  //发布主题
+        payload: `{"status":"success","params":${JSON.stringify(latestAttrList)}}`,    //消息内容
+        qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
+        retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
+        cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
+        dup: false         //判断消息是否是重复的
+      }, (err) => {          //发布失败的回调
+        if (err) {
+          console.log('发布失败')
+        }
+      });
+    }
   }
 })
 
@@ -78,28 +127,26 @@ aedesApp.on("publish", async function (packet, client) {
 //客户端发布服务器定义好的主题，将数据携带给服务器 request：client publish myMsg(payload)->server
 //服务器通过发布主题携带数据响应客户端发布的主题 response：server publish success(payload)->client
 //客户端订阅服务器发布的主题接收主题携带的数据：client subscribe success->get payload
-setInterval(() => {          //两秒发布一次
-  aedesApp.publish({
-    topic: "success",  //发布主题
-    payload: "yes",    //消息内容
-    qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
-    retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
-    cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
-    dup: false         //判断消息是否是重复的
-  }, (err) => {          //发布失败的回调
-    if (err) {
-      console.log('发布失败')
-    }
-  });
-}, 2000)
+// setInterval(() => {          //两秒发布一次
+//   aedesApp.publish({
+//     topic: "success",  //发布主题
+//     payload: "yes",    //消息内容
+//     qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
+//     retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
+//     cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
+//     dup: false         //判断消息是否是重复的
+//   }, (err) => {          //发布失败的回调
+//     if (err) {
+//       console.log('发布失败')
+//     }
+//   });
+// }, 2000)
 
-const app = net.createServer(aedesApp.handle)
+
 
 kApp.use(bodyParser())
 kApp.useRoutes()
-app.listen(1883, () => {
-  console.log('server started and listening on port 1883')
-})
-kApp.listen(8883, () => {
-  console.log('web server started and listening on port 8883')
-})
+
+module.exports = {
+  aedesApp, kApp
+}

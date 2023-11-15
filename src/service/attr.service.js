@@ -25,6 +25,11 @@ class AttrService {
     const [res] = await connection.execute(statement, [attr])
     return res
   }
+  async fetchAttrList() {
+    const statement = `SELECT * FROM attr;`
+    const [res] = await connection.execute(statement)
+    return res
+  }
 }
 
 module.exports = new AttrService

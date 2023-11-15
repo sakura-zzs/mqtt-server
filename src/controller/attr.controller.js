@@ -1,4 +1,4 @@
-const { addAttr, pubAttrVal, getAttrVal, getLatestAttrVal } = require('../service/attr.service')
+const { addAttr, pubAttrVal, getAttrVal, getLatestAttrVal, fetchAttrList } = require('../service/attr.service')
 class AttrController {
   async createAttr(ctx, next) {
     const { attr } = ctx.request.body
@@ -18,6 +18,10 @@ class AttrController {
   async getLatestVal(ctx, next) {
     const { attr } = ctx.query
     const res = await getLatestAttrVal(attr)
+    ctx.body = res
+  }
+  async getAttrList(ctx, next) {
+    const res = await fetchAttrList()
     ctx.body = res
   }
 }
