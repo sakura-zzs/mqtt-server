@@ -38,7 +38,7 @@ aedesApp.authenticate = async function (client, username, password, callback) {
   //client.id是客户端的id，是唯一的，username是客户端的用户名（密码为buffer，需要转化为string），password是客户端的密码
   //我们可以在这里进行用户的身份验证，是否允许客户端的这次连接请求
   const newPassword = password.toString();
-  if (username === 'admin' && newPassword === '123456') {
+  if (username === 'kuroneko' && newPassword === '20010613') {
     callback(null, true); //callback函数需要传递两个参数，第一个是错误实例，第二个是是否同意连接
   } else {
     callback(null, false)
@@ -70,6 +70,12 @@ aedesApp.subscribe("get", async function (packet, callback) {
   console.log("订阅get成功");
 });
 
+aedesApp.subscribe("qq", async function (packet, callback) {
+  callback();
+}, () => {
+  console.log("订阅qq成功");
+});
+
 //处理收到的消息,我们订阅所有主题收到的消息都可以通过这个事件获取(我们可以把订阅收到消息的处理函数写在上面订阅主题函数的第二个参数里面，或者统一写在下面)
 //监听客户端通过mqtt连接发起的发布事件
 aedesApp.on("publish", async function (packet, client) {
@@ -95,7 +101,7 @@ aedesApp.on("publish", async function (packet, client) {
       }
     });
   }
-  //todo:获取属性状态
+  //获取属性状态
   else if (packet.topic === 'get') {
     const latestAttrList = {}
     const attrList = await fetchAttrList()
@@ -118,6 +124,22 @@ aedesApp.on("publish", async function (packet, client) {
         }
       });
     }
+  }
+  else if (packet.topic === 'qq') {
+    //qq message
+    console.log(packet.payload.toString())
+    aedesApp.publish({
+      topic: "qq_reply",  //发布主题
+      payload: `{"status":"success","params":${packet.payload.toString()}`,    //消息内容
+      qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
+      retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
+      cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
+      dup: false         //判断消息是否是重复的
+    }, (err) => {          //发布失败的回调
+      if (err) {
+        console.log('发布失败')
+      }
+    });
   }
 })
 
