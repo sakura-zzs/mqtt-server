@@ -6,6 +6,7 @@ const Koa = require('koa')
 const useRoutes = require('../router')
 const bodyParser = require('koa-bodyparser')
 const { pubAttrVal, fetchAttrList, getLatestAttrVal } = require('../service/attr.service')
+const { addGPSInfo, getGPSInfoLatest } = require('../service/gps.service')
 const kApp = new Koa()
 kApp.useRoutes = useRoutes
 //创建aedes实例
@@ -69,13 +70,33 @@ aedesApp.subscribe("get", async function (packet, callback) {
 }, () => {
   console.log("订阅get成功");
 });
-
+//qq
 aedesApp.subscribe("qq", async function (packet, callback) {
   callback();
 }, () => {
   console.log("订阅qq成功");
 });
 
+//gps
+aedesApp.subscribe("gps", async function (packet, callback) {
+  callback();
+}, () => {
+  console.log("订阅gps成功");
+});
+const publish = (topic, status = "success", params = '""') => {
+  aedesApp.publish({
+    topic, //发布主题
+    payload: `{"status":${status},"params":${params}}`,//消息内容
+    qos: 1,//MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
+    retain: false,// MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
+    cmd: "publish",// MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
+    dup: false//判断消息是否是重复的
+  }, (err) => {
+    if (err) {
+      console.log('发布失败')
+    }
+  })
+}
 //处理收到的消息,我们订阅所有主题收到的消息都可以通过这个事件获取(我们可以把订阅收到消息的处理函数写在上面订阅主题函数的第二个参数里面，或者统一写在下面)
 //监听客户端通过mqtt连接发起的发布事件
 aedesApp.on("publish", async function (packet, client) {
@@ -88,18 +109,7 @@ aedesApp.on("publish", async function (packet, client) {
       const attrVal = recv[attr]
       await pubAttrVal(attr, attrVal)
     });
-    aedesApp.publish({
-      topic: "post_reply",  //发布主题
-      payload: '{"status":"success"}',    //消息内容
-      qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
-      retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
-      cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
-      dup: false         //判断消息是否是重复的
-    }, (err) => {          //发布失败的回调
-      if (err) {
-        console.log('发布失败')
-      }
-    });
+    publish("post_reply")
   }
   //获取属性状态
   else if (packet.topic === 'get') {
@@ -111,35 +121,35 @@ aedesApp.on("publish", async function (packet, client) {
     }
     const attrKeys = Object.keys(latestAttrList)
     if (attrKeys.length) {
-      aedesApp.publish({
-        topic: "get_reply",  //发布主题
-        payload: `{"status":"success","params":${JSON.stringify(latestAttrList)}}`,    //消息内容
-        qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
-        retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
-        cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
-        dup: false         //判断消息是否是重复的
-      }, (err) => {          //发布失败的回调
-        if (err) {
-          console.log('发布失败')
-        }
-      });
+      publish("get_reply", "success", JSON.stringify(latestAttrList))
     }
   }
   else if (packet.topic === 'qq') {
     //qq message
     console.log(packet.payload.toString())
-    aedesApp.publish({
-      topic: "qq_reply",  //发布主题
-      payload: `{"status":"success","params":${packet.payload.toString()}`,    //消息内容
-      qos: 1,            //MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
-      retain: false,     // MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
-      cmd: "publish",    // MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
-      dup: false         //判断消息是否是重复的
-    }, (err) => {          //发布失败的回调
-      if (err) {
-        console.log('发布失败')
+    publish("qq_reply", "success", packet.payload.toString())
+  }
+  else if (packet.topic === 'gps') {
+    //gps parsed message
+    // console.log(packet.payload.toString())
+    const GPSInfo = JSON.parse(packet.payload.toString())
+    // console.log(GPSInfo)
+    if (GPSInfo.dateTime) {
+      //与上一次保存的位置相同不存储
+      const { lat, lng } = await getGPSInfoLatest()
+      if (GPSInfo.lat == (lat - 0) && GPSInfo.lng == (lng - 0)) {
+        return publish("gps_reply", "success,but this is not new location", packet.payload.toString())
       }
-    });
+      //不同，进行存储
+      //1节/h=1.852 km/h
+      GPSInfo.speed *= 1.852
+      await addGPSInfo(GPSInfo)
+      //todo：返回地理信息
+      publish("gps_reply", "success", packet.payload.toString())
+    } else {
+      publish("gps_reply", "error,check your data format", packet.payload.toString())
+    }
+
   }
 })
 
