@@ -22,6 +22,18 @@ class GPSService {
     const [res] = await connection.execute(statement)
     return res
   }
+  //获取需要更新地址的列表
+  async getUpdateList() {
+    const statement = `SELECT * FROM gps WHERE city IS  NULL;`
+    const [res] = await connection.execute(statement)
+    return res
+  }
+  async updateGPSInfo(updateInfo) {
+    const { id, address, city, pointDetail, bdLat, bdLng } = updateInfo
+    const statement = `UPDATE gps SET address=?,city=?,pointDetail=?,bdLat=?,bdLng=? WHERE id=?;`
+    const [res] = await connection.execute(statement, [address, city, pointDetail, bdLat, bdLng, id])
+    return res
+  }
 }
 
 

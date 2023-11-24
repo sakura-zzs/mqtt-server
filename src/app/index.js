@@ -35,10 +35,10 @@ const aedesApp = new aedes({
 //todo：加密，存储
 //验证账号密码
 aedesApp.authenticate = async function (client, username, password, callback) {
-  console.log(1)
+  // console.log(1)
   //client.id是客户端的id，是唯一的，username是客户端的用户名（密码为buffer，需要转化为string），password是客户端的密码
   //我们可以在这里进行用户的身份验证，是否允许客户端的这次连接请求
-  const newPassword = password.toString();
+  const newPassword = password?.toString();
   if (username === 'kuroneko' && newPassword === '20010613') {
     callback(null, true); //callback函数需要传递两个参数，第一个是错误实例，第二个是是否同意连接
   } else {
@@ -134,9 +134,14 @@ aedesApp.on("publish", async function (packet, client) {
     // console.log(packet.payload.toString())
     const GPSInfo = JSON.parse(packet.payload.toString())
     // console.log(GPSInfo)
-    if (GPSInfo.dateTime) {
+    if (GPSInfo.dateTime && GPSInfo.status == 'A') {
       //与上一次保存的位置相同不存储
       const { lat, lng } = await getGPSInfoLatest()
+
+      //经度dddmm.mmmmm 纬度ddmm.mmmmm 转换为度分
+      GPSInfo.lng = Math.floor(GPSInfo.lng / 100) + GPSInfo.lng % 100 / 60
+      GPSInfo.lat = Math.floor(GPSInfo.lat / 100) + GPSInfo.lat % 100 / 60
+
       if (GPSInfo.lat == (lat - 0) && GPSInfo.lng == (lng - 0)) {
         return publish("gps_reply", "success,but this is not new location", packet.payload.toString())
       }
