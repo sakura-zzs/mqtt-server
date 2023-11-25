@@ -131,30 +131,50 @@ aedesApp.on("publish", async function (packet, client) {
   }
   else if (packet.topic === 'gps') {
     //gps parsed message
-    // console.log(packet.payload.toString())
-    const GPSInfo = JSON.parse(packet.payload.toString())
-    // console.log(GPSInfo)
-    if (GPSInfo.dateTime && GPSInfo.status == 'A') {
-      //与上一次保存的位置相同不存储
-      const { lat, lng } = await getGPSInfoLatest()
-
-      //经度dddmm.mmmmm 纬度ddmm.mmmmm 转换为度分
-      GPSInfo.lng = Math.floor(GPSInfo.lng / 100) + GPSInfo.lng % 100 / 60
-      GPSInfo.lat = Math.floor(GPSInfo.lat / 100) + GPSInfo.lat % 100 / 60
-
-      if (GPSInfo.lat == (lat - 0) && GPSInfo.lng == (lng - 0)) {
-        return publish("gps_reply", "success,but this is not new location", packet.payload.toString())
+    console.log(packet.payload.toString())
+    try {
+      const { params } = JSON.parse(packet.payload.toString())
+      const GPSInfo = params
+      console.log(GPSInfo)
+      const isDateTime = /^\d{4}\-[0-9]{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(GPSInfo.dateTime)
+      const isLat = /^\d{4}.\d{4}$/.test(GPSInfo.lat)
+      const isLng = /^\d{5}.\d{4}$/.test(GPSInfo.lng)
+      const isHigh = GPSInfo.high.toString().length <= 6 ? true : false
+      const isSpeed = GPSInfo.speed.toString().length <= 8 ? true : false
+      const isDirection = GPSInfo.direction.toString().length <= 5 ? true : false
+      const isStatus = GPSInfo.status == 'A' ? true : false
+      const isNS = /^[NS]$/.test(GPSInfo.ns)
+      const isEW = /^[EW]$/.test(GPSInfo.ew)
+      const isValid = isDateTime * isLat * isLng * isHigh * isSpeed * isDirection * isStatus * isNS * isEW
+      if (isValid) {
+        //与上一次保存的位置相同不存储
+        let gpsLat = GPSInfo.lat
+        let gpsLng = GPSInfo.lng
+        let { lat, lng } = await getGPSInfoLatest()
+        //相同点判定
+        //dd.mmmm度分格式保留4位小数,加减0.0001
+        //ddmm.mmmm格式相同点位误差容许计算，保留2位小数，四舍五入，加0.01，减0.01，再比较（误差容许之内相同即为相同点位）
+        lat = (lat - 0).toFixed(2)
+        lng = (lng - 0).toFixed(2)
+        gpsLat = gpsLat.toFixed(2)
+        gpsLng = gpsLng.toFixed(2)
+        const isEqualLat = gpsLat == lat || (gpsLat - 0 + 0.01) == lat || (gpsLat - 0.01).toFixed(2) == lat
+        const isEqualLng = gpsLng == lng || (gpsLng - 0 + 0.01) == lng || (gpsLng - 0.01).toFixed(2) == lng
+        if (isEqualLat && isEqualLng) {
+          return publish("gps_reply", "success,but this is not new location", packet.payload.toString())
+        }
+        //不同，进行存储
+        //1节/h=1.852 km/h
+        GPSInfo.speed *= 1.852
+        await addGPSInfo(GPSInfo)
+        //todo：返回地理信息
+        publish("gps_reply", "success", packet.payload.toString())
+      } else {
+        publish("gps_reply", "error,check your data format", packet.payload.toString())
       }
-      //不同，进行存储
-      //1节/h=1.852 km/h
-      GPSInfo.speed *= 1.852
-      await addGPSInfo(GPSInfo)
-      //todo：返回地理信息
-      publish("gps_reply", "success", packet.payload.toString())
-    } else {
+    } catch (error) {
       publish("gps_reply", "error,check your data format", packet.payload.toString())
     }
-
   }
 })
 
