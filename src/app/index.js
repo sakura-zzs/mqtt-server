@@ -83,10 +83,12 @@ aedesApp.subscribe("gps", async function (packet, callback) {
 }, () => {
   console.log("订阅gps成功");
 });
+
+
 const publish = (topic, status = "success", params = '""') => {
   aedesApp.publish({
     topic, //发布主题
-    payload: `{"status":"${status}","params":${params}}`,//消息内容
+    payload: `{"status":"${status}","params":{"msg":"${params}"}}`,//消息内容
     qos: 1,//MQTT消息的服务质量（quality of service）。服务质量是1，这意味着这个消息需要至少一次确认（ACK）才能被认为是传输成功
     retain: false,// MQTT消息的保留标志（retain flag），它用于控制消息是否应该被保留在MQTT服务器上，以便新的订阅者可以接收到它。保留标志是false，这意味着这个消息不应该被保留
     cmd: "publish",// MQTT消息的命令（command），它用于控制消息的类型。命令是"publish"，这意味着这个消息是一个发布消息
@@ -127,11 +129,32 @@ aedesApp.on("publish", async function (packet, client) {
   else if (packet.topic === 'qq') {
     //接收qq message 客户端id为2
     //发送qq message 客户端id为1
-
-    console.log(packet.payload.toString())
+    console.log(packet.payload)
+    console.log(1, packet.payload.toString())
+    const convutf8 = Buffer.from(packet.payload.toString(), "utf8")
+    console.log(2, convutf8)
     //2作为接收消息的中转客户端，通过qq_reply将消息下发给1
     if (client.id == '2') {
-      publish("qq_reply", "success", packet.payload.toString())
+      //转为16进制发送
+      let hexPayload = packet.payload.toString('hex')
+      //将字符串的""去掉
+      if (hexPayload.startsWith("22") && hexPayload.endsWith("22")) {
+        hexPayload = hexPayload.slice(2)
+        hexPayload = hexPayload.slice(0, hexPayload.length - 2)
+      }
+      // let hexFormatPayload = ''
+      // for (let i = 0; i < hexPayload.length; i++) {
+      //   if (i % 2 == 0) {
+      //     hexFormatPayload += "\\x" + hexPayload[i] + hexPayload[i + 1]
+      //   }
+      //   //每10个中文插入一个换行符，utf8一个中文三个字节，一个字节俩位16进制，也就是每60个16进制插入一个换行符
+      //   if (i != 0 && (i + 1) % 60 == 0) {
+      //     hexFormatPayload += "\\n"
+      //   }
+
+      // }
+      console.log(hexPayload)
+      publish("qq_reply", "success", hexPayload)
     }
     //1作为发送消息的中转客户端，通过qq_send将消息下发给2
     if (client.id == '1') {
